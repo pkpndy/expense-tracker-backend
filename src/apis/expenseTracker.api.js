@@ -13,26 +13,11 @@ const pathForUserExpensesApis = {
     updateExpense: `${pathForUserApi}/updateExpense`,
     deleteExpense: `${pathForUserApi}/deleteExpense`,
     getExpenseLimit: `${pathForUserApi}/getExpenseLimit`,
-    updateExpenseLimit: `${pathForUserApi}/updateExpenseLimit`
+    updateExpenseLimit: `${pathForUserApi}/updateExpenseLimit`,
+    getExpenseAnalytics: `${pathForUserApi}/getExpenseAnalytics`
 };
 
 module.exports = {
     pathForUserAuthApis,
     pathForUserExpensesApis
 }
-
-// app.use('/api/users', userRoutes);
-// app.use('/api/expenses', expenseRoutes);
-// app.use('/api/analytics', analyticsRoutes);
-
-// router.post('/signup', signup);
-// router.post('/login', login);
-
-// router.post("/addExpense", auth, addExpense);
-// router.get("/getExpenses", auth, getExpenses);
-// router.patch("/updateExpense/:id", auth, updateExpense);
-// router.delete("/deleteExpense/:id", auth, deleteExpense);
-// router.get("/getAnalytics", auth, getAnalytics);
-
-
-// app.use('/api/analytics', analyticsRoutes);

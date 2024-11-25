@@ -2,6 +2,7 @@ const Expense = require("../models/Expense");
 const User = require("../models/User");
 
 exports.addExpense = async (req, res) => {
+  console.log("entered add expense");
   try {
     const { amount, category, name: description } = req.body;
     const userId = req.user.userId;
@@ -39,8 +40,6 @@ exports.addExpense = async (req, res) => {
   }
 };
 
-
-// Get all expenses with optional filters
 exports.getExpenses = async (req, res) => {
   try {
     const { category, startDate, endDate, minAmount, maxAmount } = req.query; // Retrieve filters from query parameters
@@ -71,13 +70,11 @@ exports.updateExpense = async (req, res) => {
     const { amount, date } = req.body;
     const userId = req.user.userId;
 
-    // Retrieve the original expense to get its current amount
     const originalExpense = await Expense.findById(id);
     if (!originalExpense) {
       return res.status(404).json({ message: "Expense not found" });
     }
 
-    // Retrieve existing expenses for the current month
     const startOfMonth = new Date(date || originalExpense.date);
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -88,12 +85,11 @@ exports.updateExpense = async (req, res) => {
     const monthlyExpenses = await Expense.find({
       userId,
       date: { $gte: startOfMonth, $lt: endOfMonth },
-      _id: { $ne: id }, // Exclude the expense being updated
+      _id: { $ne: id },
     });
 
     const totalMonthlyExpenses = monthlyExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-    // Retrieve the user's monthly limit
     const user = await User.findById(userId); // Assuming you have a User model
     const monthlyLimit = user.monthlyLimit;
 
@@ -101,7 +97,6 @@ exports.updateExpense = async (req, res) => {
       return res.status(400).json({ message: "Monthly limit exceeded" });
     }
 
-    // Update the expense
     const updatedExpense = await Expense.findByIdAndUpdate(id, req.body, { new: true });
 
     return res.json({ message: "Expense updated successfully", updatedExpense });
@@ -110,8 +105,6 @@ exports.updateExpense = async (req, res) => {
   }
 };
 
-
-// Delete an expense
 exports.deleteExpense = async (req, res) => {
   try {
     await Expense.findByIdAndDelete(req.params.id);
@@ -121,26 +114,83 @@ exports.deleteExpense = async (req, res) => {
   }
 };
 
-// Analytics (by category and monthly)
-exports.getAnalytics = async (req, res) => {
+exports.getExpenseAnalytics = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const [categorySummary, monthlySummary] = await Promise.all([
-      Expense.aggregate([
-        { $match: { userId } },
-        { $group: { _id: "$category", totalAmount: { $sum: "$amount" } } },
-      ]),
-      Expense.aggregate([
-        { $match: { userId } },
-        { $group: { _id: { $month: "$date" }, totalAmount: { $sum: "$amount" } } },
-      ]),
-    ]);
+    const { category, startDate, endDate, minAmount, maxAmount } = req.query;
 
-    return res.json({ categorySummary, monthlySummary });
+    const query = { userId };
+    if (category) query.category = category;
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = new Date(startDate);
+      if (endDate) query.date.$lte = new Date(endDate);
+    }
+    if (minAmount || maxAmount) {
+      query.amount = {};
+      if (minAmount) query.amount.$gte = parseFloat(minAmount);
+      if (maxAmount) query.amount.$lte = parseFloat(maxAmount);
+    }
+
+    const user = await User.findById(userId);
+    const monthlyLimit = user?.monthlyLimit || 0;
+
+    let categorySummary, totalExpenses;
+
+    if (Object.keys(query).length > 1) {
+      [categorySummary, totalExpenses] = await Promise.all([
+        Expense.aggregate([
+          { $match: query },
+          { $group: { _id: "$category", totalAmount: { $sum: "$amount" } } },
+        ]),
+        Expense.aggregate([
+          { $match: query },
+          { $group: { _id: null, totalAmount: { $sum: "$amount" } } },
+        ]),
+      ]);
+    } else {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+      query.date = { $gte: startOfMonth, $lte: endOfMonth };
+
+      [categorySummary, totalExpenses] = await Promise.all([
+        Expense.aggregate([
+          { $match: query },
+          { $group: { _id: "$category", totalAmount: { $sum: "$amount" } } },
+        ]),
+        Expense.aggregate([
+          { $match: query },
+          { $group: { _id: null, totalAmount: { $sum: "$amount" } } },
+        ]),
+      ]);
+    }
+
+    const percentageSummary = categorySummary.map((item) => ({
+      category: item._id,
+      totalAmount: item.totalAmount,
+      percentageOfLimit: monthlyLimit
+        ? ((item.totalAmount / monthlyLimit) * 100).toFixed(2)
+        : 0,
+    }));
+
+    const totalSpent = totalExpenses?.[0]?.totalAmount || 0;
+    const overallPercentage = monthlyLimit
+      ? ((totalSpent / monthlyLimit) * 100).toFixed(2)
+      : 0;
+
+    return res.json({
+      categorySummary: percentageSummary,
+      totalSpent,
+      overallPercentage,
+    });
   } catch (error) {
+    console.error("Error generating analytics:", error);
     return res.status(500).json({ message: "Error generating analytics", error });
   }
 };
+
 
 exports.updateExpenseLimit = async (req, res) => {
   try {
